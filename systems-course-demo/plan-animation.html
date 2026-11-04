@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ReRoom — 2D animation with controls</title>
+<style>
+  *{box-sizing:border-box}
+  :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#243d39;background:#f3f6f4}
+  body{margin:0;min-height:100%;padding:clamp(8px,2vw,20px)}
+  .rr-app{max-width:1280px;margin:0 auto}
+  .rr-stage{background:#f4f7f5;border:1px solid #d7e4de;border-radius:12px;overflow:hidden}
+  canvas{display:block;width:100%;aspect-ratio:16/9;height:auto;cursor:pointer}
+  .rr-controls{display:flex;flex-direction:column;gap:10px;padding:12px 4px 0}
+  .rr-first,.rr-second{display:flex;align-items:end;flex-wrap:wrap;gap:9px}
+  .rr-field{display:flex;flex-direction:column;gap:5px;flex:1 1 170px;min-width:0}
+  .rr-field--speed{flex:0 1 136px}
+  label .rr-label{font-size:11px;font-weight:700;color:#57716b}
+  select{font:inherit;font-size:14px;padding:10px 11px;min-height:42px;width:100%;background:white;border:1px solid #cddfd7;color:#243e38;border-radius:9px;cursor:pointer}
+  button{min-height:42px;font:inherit;font-size:13px;font-weight:650;border-radius:9px;border:1px solid #cfdfd8;background:#fff;color:#254d45;padding:10px 14px;cursor:pointer}
+  button:hover{background:#eaf4ef}
+  button.primary{background:#276f63;border-color:#276f63;color:#fff;min-width:110px}
+  button.primary:hover{background:#1d5c52}
+  button:disabled{opacity:.5;cursor:default}
+  button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #4d9f89;outline-offset:2px}
+  .rr-swap{flex:0 0 44px;width:44px;padding:9px;font-size:20px}
+  .rr-check{display:flex;align-items:center;gap:8px;min-height:42px;padding:4px 10px;border:1px solid #cfdfd8;border-radius:9px;background:#fff;cursor:pointer;font-size:13px;font-weight:620;white-space:nowrap}
+  .rr-check input{height:19px;width:19px;margin:0;accent-color:#bd5c41}
+  .rr-track{flex:1 1 150px;display:flex;align-items:center;gap:10px;min-width:105px;align-self:center}
+  .rr-track input{width:100%;accent-color:#2c8f7c;min-width:0;cursor:pointer}
+  .rr-count{min-width:72px;text-align:right;white-space:nowrap;color:#71867f;font-size:11px;font-variant-numeric:tabular-nums}
+  .rr-alert{color:#a64835;font-weight:700}
+  .rr-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  @media(max-width:650px){.rr-first{display:grid;grid-template-columns:minmax(0,1fr) 42px minmax(0,1fr)}.rr-field--speed{grid-column:1/-1}.rr-second{gap:7px}.rr-track{flex-basis:100%}.rr-check{flex-grow:1;justify-content:center}.rr-count{min-width:58px}}
+  /* embedded mode (added for the Reroom phone demo): canvas only */
+  body.bare{padding:0;background:#f4f7f5;overflow:hidden}
+  .bare .rr-controls{display:none}
+  .bare .rr-stage{border:0;border-radius:0}
+  .bare canvas{cursor:default}
+</style></head><body>
+<div class="rr-app">
+  <div class="rr-stage"><canvas id="stage" width="1280" height="720" role="img" aria-label="Top-down animated hall with two RFID-assisted robots moving chairs safely between layouts. Click to pause or resume."></canvas></div>
+  <section class="rr-controls" aria-label="ReRoom animation controls">
+    <div class="rr-first">
+      <label class="rr-field" for="from"><span class="rr-label">From layout</span><select id="from"><option value="group">Group Study</option><option value="classroom">Classroom</option><option value="studio">Design studio</option><option value="lecture">Guest lecture / presentation</option><option value="exhibition">Poster and model exhibition</option></select></label>
+      <button id="swap" class="rr-swap" type="button" title="Reverse the selected layout change" aria-label="Swap layouts">⇄</button>
+      <label class="rr-field" for="to"><span class="rr-label">To layout</span><select id="to"><option value="classroom">Classroom</option><option value="group">Group Study</option><option value="studio">Design studio</option><option value="lecture">Guest lecture / presentation</option><option value="exhibition">Poster and model exhibition</option></select></label>
+      <label class="rr-field rr-field--speed" for="speed"><span class="rr-label">Speed</span><select id="speed"><option value="0.5">0.5×</option><option value="1">1×</option><option value="2" selected>2×</option><option value="4">4×</option><option value="10">10×</option></select></label>
+    </div>
+    <div class="rr-second">
+      <button id="play" class="primary" type="button">Pause</button>
+      <button id="reset" type="button">↺ Restart</button>
+      <label class="rr-check" for="obstacle"><input id="obstacle" type="checkbox">Safety stop</label>
+      <label class="rr-track" for="timeline"><span class="rr-sr-only">Playback position</span><input id="timeline" type="range" min="0" max="1000" step="1" value="0" aria-label="Playback position"><span class="rr-count" id="readout">0% · 0/0</span></label>
+    </div>
+    <div class="rr-sr-only" aria-live="polite" id="status"></div>
+    <div id="internals" hidden aria-hidden="true"><div id="done"></div><div id="fill"></div><div id="separation"></div><div id="robotA"></div><div id="robotB"></div><div id="message"></div></div>
+  </section>
+</div>
+<script>
+
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id),cv=$('stage'),ctx=cv.getContext('2d');
+const selectFrom=$('from'),selectTo=$('to'),play=$('play'),speed=$('speed'),stop=$('obstacle');
+const W=1280,H=720; const room={length:25.6,width:8};
+const cA='#2a988c',cB='#d8894e';
+const zones=[{min:0.65,max:17.35,lane:0.85,dock:{u:6.65,v:7.08}},{min:19.65,max:24.95,lane:7.08,dock:{u:19.95,v:7.08}}];
+const groupCenters=[10.7,15.5,22.1];
+const labels={group:'Group Study',classroom:'Classroom',studio:'Design studio',lecture:'Guest lecture / presentation',exhibition:'Poster and model exhibition'};
+const allIDs=Array.from({length:60},(_,i)=>'C'+(i+1));
+const uZone=id=>{const n=Number(id.slice(1));return n<=24||n>=37&&n<=48?0:1;};
+function p(u,v){return {u,v};}
+function circlesAround(c){const pts=[];[-.62,0,.62].forEach(d=>pts.push(p(c+d,2.55)));[3.22,4,4.78].forEach(v=>pts.push(p(c+1.40,v)));[-.62,0,.62].forEach(d=>pts.push(p(c+d,5.45)));[4.78,4,3.22].forEach(v=>pts.push(p(c-1.40,v)));return pts;}
+const groupArray=groupCenters.flatMap(circlesAround);
+const seatAcross=[1.48,2.18,2.88,3.58,4.28,4.98,5.68,6.38];
+function rows(us){return us.flatMap(u=>seatAcross.map(v=>p(u,v)));}
+function stored(id){
+ const n=Number(id.slice(1));
+ // Illustrative storage locations within internally reserved operating ranges.
+ // Active A IDs: C1-C24; other A: C37-C48. Active B: C25-C36; other B: C49-C60.
+ if(n<=24){const z=n-1;return p(1.15+(z%4)*1.12,1.05+Math.floor(z/4)*1.08);}
+ if(n<=36){const z=n-25;return p(24.0+(z%2)*.73,1.08+Math.floor(z/2)*1.08);}
+ if(n<=48){const z=n-37;return p(5.66+(z%2)*.81,1.05+Math.floor(z/2)*1.08);}
+ const z=n-49;return p(19.9+(z%2)*.7,1.05+Math.floor(z/2)*1.08);
+}
+function buildLayout(which){const map=new Map(),tables=[];
+ if(which==='group'){
+  groupArray.forEach((pt,i)=>map.set('C'+(i+1),pt));
+  groupCenters.forEach((c,i)=>tables.push({id:'SQ'+(i+1),u:c,v:4,du:1.6,dv:1.6}));
+ } else if(which==='classroom'){
+  const a=rows([10.1,13.05,16.0]),b=rows([21.12,23.67]);
+  for(let i=0;i<24;i++)map.set('C'+(i+1),a[i]);
+  const bIds=[...Array.from({length:12},(_,i)=>'C'+(25+i)),...Array.from({length:4},(_,i)=>'C'+(49+i))];
+  bIds.forEach((id,i)=>map.set(id,b[i]));
+  [9.25,12.2,15.15,20.27,22.82].forEach((u,i)=>tables.push({id:'LD'+(i+1),u,v:4,du:.61,dv:4.4,ghost:true}));
+ } else if(which==='studio'){
+  const a=rows([10.1,13.05,16.0]);
+  const b=Array.from({length:18},(_,i)=>p([20.9,22.3,23.7][Math.floor(i/6)],1.65+(i%6)*.93));
+  for(let i=0;i<24;i++)map.set('C'+(i+1),a[i]);
+  const ids=[...Array.from({length:12},(_,i)=>'C'+(25+i)),...Array.from({length:6},(_,i)=>'C'+(49+i))];
+  ids.forEach((id,i)=>map.set(id,b[i]));
+  [10.9,15.55,22.3].forEach((u,i)=>tables.push({id:'ST'+(i+1),u,v:4,du:1.65,dv:2.5,ghost:true}));
+ } else if(which==='lecture'){
+  const a=rows([7.8,10.2,12.6,15.0]),b=rows([20.0,22.1,24.05]);
+  const aIds=[...Array.from({length:24},(_,i)=>'C'+(i+1)),...Array.from({length:8},(_,i)=>'C'+(37+i))];
+  const bIds=[...Array.from({length:12},(_,i)=>'C'+(25+i)),...Array.from({length:12},(_,i)=>'C'+(49+i))];
+  aIds.forEach((id,i)=>map.set(id,a[i]));bIds.forEach((id,i)=>map.set(id,b[i]));
+  tables.push({id:'LD6',u:16.6,v:4,du:.61,dv:4.4,ghost:true});
+ } else if(which==='exhibition'){
+  for(let i=0;i<8;i++)tables.push({id:'PN'+(i+1),u:8.5+i*1.85,v:i%2?5.9:2.1,du:1.15,dv:.12,ghost:true,panel:true});
+ }
+ return {chairs:map,tables};}
+let base={},dest={},models=new Map(),tasks=[],events=[[],[]],duration=30,time=0,playing=false,paused=false,lastStamp=0;
+const getInitial=id=>base.chairs.get(id)||stored(id),getTarget=id=>dest.chairs.get(id)||stored(id);
+function distance(a,b){return Math.hypot(a.u-b.u,a.v-b.v);}
+function lerp(a,b,r){return p(a.u+(b.u-a.u)*r,a.v+(b.v-a.v)*r);}
+function chainLen(points){return points.slice(1).reduce((s,q,i)=>s+distance(points[i],q),0);}
+function route(a,b,zoneIndex){const z=zones[zoneIndex];const protect=q=>p(Math.max(z.min,Math.min(z.max,q.u)),Math.max(.65,Math.min(7.3,q.v)));
+ const out=[protect(a),protect(p(a.u,z.lane)),protect(p(b.u,z.lane)),protect(b)];
+ const clean=[];for(let i=0;i<out.length;i++){const q=out[i];if(!clean.length||distance(clean[clean.length-1],q)>.01)clean.push(q);}return clean;}
+function samplePath(path,t){if(!path.length)return p(0,0);if(path.length===1)return path[0];const total=chainLen(path);if(total===0)return path[path.length-1];let left=Math.max(0,Math.min(1,t))*total;
+ for(let i=1;i<path.length;i++){const d=distance(path[i-1],path[i]);if(left<=d)return lerp(path[i-1],path[i],d?left/d:1);left-=d;}return path[path.length-1];}
+function create(){base=buildLayout(selectFrom.value);dest=buildLayout(selectTo.value);models=new Map();tasks=[];events=[[],[]];
+ for(const id of allIDs){const a=getInitial(id),b=getTarget(id),zone=uZone(id);models.set(id,{id,a,b,zone});if(distance(a,b)>.035)tasks.push({id,a,b,zone});}
+ for(let k=0;k<2;k++){
+  const own=tasks.filter(q=>q.zone===k).sort((a,b)=>a.id.localeCompare(b.id,undefined,{numeric:true}));
+  let cur=zones[k].dock,t=1.1;
+  own.forEach((job,i)=>{
+   const approach=route(cur,job.a,k),transfer=route(job.a,job.b,k);
+   const t1=.30+.025*chainLen(approach),t2=.48+.024*chainLen(transfer);
+   events[k].push({kind:'approach',job,start:t,end:t+t1,path:approach});t+=t1;
+   events[k].push({kind:'scan',job,start:t,end:t+.16,path:[job.a]});t+=.16;
+   events[k].push({kind:'carry',job,start:t,end:t+t2,path:transfer});t+=t2;
+   events[k].push({kind:'place',job,start:t,end:t+.11,path:[job.b]});t+=.11;
+   cur=job.b;
+  });
+  const back=route(cur,zones[k].dock,k);
+  events[k].push({kind:'dock',job:null,start:t,end:t+.38+.025*chainLen(back),path:back});
+ }
+ duration=Math.max(...events.map(arr=>arr[arr.length-1].end))+1;
+ time=0;paused=false;playing=false;lastStamp=0;stop.checked=false;render();updateUI();}
+function snap(k,t){const evs=events[k],dock=zones[k].dock;
+ if(t<evs[0].start)return {pos:dock,phase:'Waiting at dock',item:null,carrying:false};
+ for(const ev of evs){if(t>=ev.start&&t<ev.end){const portion=(t-ev.start)/(ev.end-ev.start);const eased=portion*portion*(3-2*portion);const pos=samplePath(ev.path,eased);const id=ev.job&&ev.job.id;
+   return {pos,phase:ev.kind,item:id,carrying:ev.kind==='carry',route:ev.path,progress:portion};}}
+ return {pos:dock,phase:'Charging',item:null,carrying:false};}
+function chairPos(q,t){let when=null;
+ for(const event of events[q.zone])if(event.job&&event.job.id===q.id){if(event.kind==='scan'){when=event.end;break;}}
+ if(when===null)return q.a;
+ const evs=events[q.zone];const place=evs.find(e=>e.job&&e.job.id===q.id&&e.kind==='place');
+ if(t<when)return q.a;if(t<place.end)return null;return q.b;}
+function doneCount(t){let n=0;for(const arr of events)for(const ev of arr)if(ev.kind==='place'&&t>=ev.end)n++;return n;}
+const scale=43.6, ox=82,oy=185; // Landscape rotation: corridor length is horizontal.
+const X=u=>ox+u*scale,Y=v=>oy+v*scale;
+function rect(x,y,w,h,fill,stroke,width=1){ctx.fillStyle=fill;ctx.fillRect(x,y,w,h);if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.strokeRect(x,y,w,h)}}
+function label(s,x,y,size=12,color='#506e69',weight=550,align='left'){ctx.fillStyle=color;ctx.textAlign=align;ctx.font=weight+' '+size+'px Inter,system-ui,Arial,sans-serif';ctx.fillText(s,x,y);ctx.textAlign='left'}
+function rounded(x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.stroke();}}
+function drawRoom(){
+ ctx.clearRect(0,0,W,H);
+ ctx.fillStyle='#f4f7f5';ctx.fillRect(0,0,W,H);
+ const grad=ctx.createLinearGradient(ox,oy,ox+25.6*scale,oy+8*scale);
+ grad.addColorStop(0,'#f6faf7');grad.addColorStop(1,'#edf4ef');
+ rounded(ox-8,oy-8,25.6*scale+16,8*scale+16,7,grad,'#68877d');
+ // Subtle real-world floor grid: no text, HUDs, or internal robot-zone markings.
+ for(let u=1;u<25.6;u+=1){ctx.strokeStyle='#e0e9e3';ctx.lineWidth=.55;ctx.beginPath();ctx.moveTo(X(u),oy);ctx.lineTo(X(u),oy+8*scale);ctx.stroke();}
+ for(let v=1;v<8;v++){ctx.strokeStyle='#e0e9e3';ctx.lineWidth=.55;ctx.beginPath();ctx.moveTo(ox,Y(v));ctx.lineTo(X(25.6),Y(v));ctx.stroke();}
+ // Approximate perimeter columns; not a surveyed floor plan.
+ [0,3.7,7.4,11.1,14.8,18.5,22.2,25.6].forEach(u=>{
+  rect(X(u)-6,oy-9,12,18,'#61736e');rect(X(u)-6,oy+8*scale-9,12,18,'#61736e');
+ });
+ // Door void in outer wall only, not a zone divider.
+ const dx=X(15.45),dw=X(17.2)-X(15.45);
+ rect(dx,oy-11,dw,13,'#f4f7f5');
+ ctx.strokeStyle='#a6b8ae';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(dx,oy-5);ctx.lineTo(dx+dw,oy-5);ctx.stroke();
+ // Two floor-level charging pads, with tiny nonverbal charging symbols.
+ zones.forEach((zone,k)=>{
+  const d=zone.dock,a=X(d.u),b=Y(d.v);
+  rounded(a-21,b-17,42,34,5,'#e5c467','#ae8b41');
+  ctx.beginPath();ctx.moveTo(a+1,b-12);ctx.lineTo(a-9,b+1);ctx.lineTo(a-1,b+1);ctx.lineTo(a-6,b+12);ctx.lineTo(a+10,b-3);ctx.lineTo(a+2,b-3);ctx.closePath();
+  ctx.fillStyle='#805e27';ctx.fill();
+ });
+}
+
+function drawChair(x,y,id,staged=false,translucent=false){const a=X(x),b=Y(y);ctx.save();ctx.globalAlpha=translucent?.32:(staged?.60:1);
+ const s=staged?12.5:16.5;rounded(a-s/2,b-s/2,s,s,3,staged?'#9fb9b5':'#4e8090',staged?'#7a9691':'#2f6575');
+ rect(a-s/2+2,b-s/2+2,s-4,3,staged?'#6f9995':'#2c6174');
+ ctx.fillStyle='#e9bc5a';ctx.beginPath();ctx.arc(a+s/2-2,b+s/2-2,2.1,0,Math.PI*2);ctx.fill();ctx.restore();}
+function drawTable(table){
+ const a=X(table.u),b=Y(table.v),du=table.du*scale,dv=table.dv*scale;
+ if(table.ghost){
+  ctx.save();ctx.setLineDash([5,5]);ctx.fillStyle='rgba(190,174,148,.06)';
+  ctx.fillRect(a-du/2,b-dv/2,du,dv);ctx.strokeStyle='#cfb993';ctx.lineWidth=2;
+  ctx.strokeRect(a-du/2,b-dv/2,du,dv);ctx.restore();
+ }else{rounded(a-du/2,b-dv/2,du,dv,4,'#b79c77','#806c4f');}
+}
+
+function drawFurniture(t){const current=new Map();for(const id of allIDs){const item=models.get(id);const cp=chairPos(item,t);if(cp)current.set(id,cp);}
+ // Draw target equipment outlines only; no heavy transport claimed.
+ dest.tables.filter(q=>q.ghost).forEach(drawTable);
+ base.tables.forEach(q=>drawTable(q));
+ for(const [id,pos] of current){if(!base.chairs.has(id)&&!dest.chairs.has(id))continue;const staged=!base.chairs.has(id)&&distance(pos,models.get(id).a)<.04||!dest.chairs.has(id)&&distance(pos,models.get(id).b)<.04;drawChair(pos.u,pos.v,id,staged,false);}
+
+}
+function drawRoutes(robots){}
+function drawRobot(r,k){const a=X(r.pos.u),b=Y(r.pos.v);const color=k===0?cA:cB;
+ // Robot 0.60 m diameter (concept) represented entirely on the floor.
+ ctx.save();ctx.fillStyle='rgba(28,51,45,.10)';ctx.beginPath();ctx.ellipse(a,b+5,17,9,0,0,7);ctx.fill();
+ rounded(a-14,b-12,28,24,7,color,'#fff');rect(a-16,b-9,4,18,'#425955');rect(a+12,b-9,4,18,'#425955');
+ rounded(a-8,b-7,16,13,4,'#effaf6');
+ if(r.carrying){drawChair(r.pos.u,r.pos.v,r.item,false,false);ctx.strokeStyle='#e8c15d';ctx.lineWidth=2;ctx.beginPath();ctx.arc(a,b,20,0,2*Math.PI);ctx.stroke();}
+ if(r.phase==='scan'){ctx.strokeStyle=color;ctx.lineWidth=2;for(const z of [23,32]){ctx.beginPath();ctx.arc(a,b,z,-Math.PI/3,Math.PI/3);ctx.stroke();}}
+ ctx.restore();}
+function drawHUD(t,robots){
+ if(stop.checked){ctx.fillStyle='rgba(154,50,30,.17)';ctx.fillRect(0,0,W,H);}
+}
+
+function frameState(t){return [snap(0,t),snap(1,t)];}
+function render(){drawRoom();drawFurniture(time);const robots=frameState(time);drawRoutes(robots);robots.forEach(drawRobot);drawHUD(time,robots);}
+function validate(samples=800){let minSep=Infinity,minGap=Infinity,bounds=true;
+ for(let n=0;n<=samples;n++){const t=duration*n/samples;const rs=frameState(t);const q=distance(rs[0].pos,rs[1].pos);minSep=Math.min(minSep,q);const gap=rs[1].pos.u-rs[0].pos.u;minGap=Math.min(minGap,gap);
+  rs.forEach((r,k)=>{if(r.pos.u<zones[k].min-.0001||r.pos.u>zones[k].max+.0001||r.pos.v<.65-.0001||r.pos.v>7.3+.0001)bounds=false;});}
+ return {passed:minSep>=1.20&&minGap>=1.20&&bounds,min_robot_separation_m:Math.round(minSep*100)/100,min_horizontal_gap_m:Math.round(minGap*100)/100,robot_radius_m:.30,models:'robot-to-robot separation using invisible operating-range constraints only',no_out_of_zone:bounds,simulated_tasks:tasks.length};}
+function updateUI(){const n=doneCount(time),robots=frameState(time),v=validate(100);$('done').textContent=n+' / '+tasks.length;$('fill').style.width=(tasks.length?100*n/tasks.length:100)+'%';$('separation').textContent=v.min_robot_separation_m.toFixed(2);
+ $('robotA').textContent=robots[0].phase==='dock'?'Returning to dock':robots[0].phase==='scan'?'Reading '+robots[0].item:robots[0].phase==='carry'?'Delivering '+robots[0].item:robots[0].phase==='approach'?'Approaching '+robots[0].item:robots[0].phase==='place'?'Placing '+robots[0].item:robots[0].phase;
+ $('robotB').textContent=robots[1].phase==='dock'?'Returning to dock':robots[1].phase==='scan'?'Reading '+robots[1].item:robots[1].phase==='carry'?'Delivering '+robots[1].item:robots[1].phase==='approach'?'Approaching '+robots[1].item:robots[1].phase==='place'?'Placing '+robots[1].item:robots[1].phase;
+ const doneTime=time>=duration-.001;
+ $('status').textContent=stop.checked?'Safety stop — person detected':doneTime?'Chair movement phase complete':playing?'Two robots rearranging chairs':'Paused / ready';
+ $('message').textContent=stop.checked?'Both robots stop until the simulated person is cleared.':doneTime?'Two robots are at their proposed chargers. Tables/panels still need a separate handling plan.':'The robots are coordinated using collision-checked paths, without visible dividers.';
+ play.textContent=doneTime?'▶ Replay':playing?'❚❚ Pause':'▶ Play';$('timeline').value=String(Math.round(1000*time/Math.max(.01,duration)));$('readout').textContent=Math.round(100*time/Math.max(.01,duration))+'% · '+n+'/'+tasks.length;$('readout').classList.toggle('rr-alert',stop.checked);play.disabled=stop.checked;}
+function seek(t){time=Math.max(0,Math.min(duration,Number(t)||0));render();updateUI();}
+function tick(stamp){if(!lastStamp)lastStamp=stamp;const dt=Math.min(.065,Math.max(0,(stamp-lastStamp)/1000));lastStamp=stamp;
+ if(playing&&!stop.checked){time=Math.min(duration,time+dt*Number(speed.value));if(time>=duration){if(document.body.classList.contains('bare')){playing=false;try{parent.postMessage({reroom:'done'},'*')}catch(e){}}else time=0;}render();updateUI();}requestAnimationFrame(tick);}
+selectFrom.addEventListener('change',()=>{create();playing=!stop.checked;updateUI();});selectTo.addEventListener('change',()=>{create();playing=!stop.checked;updateUI();});
+$('reset').addEventListener('click',()=>{create();playing=!stop.checked;updateUI();});
+$('swap').addEventListener('click',()=>{const v=selectFrom.value;selectFrom.value=selectTo.value;selectTo.value=v;create();playing=!stop.checked;updateUI();});
+play.addEventListener('click',()=>{if(stop.checked)return;if(time>=duration)create();playing=!playing;updateUI();});
+stop.addEventListener('change',()=>{if(stop.checked)playing=false;render();updateUI();});
+$('timeline').addEventListener('input',()=>{playing=false;seek(duration*Number($('timeline').value)/1000);});
+window.ReRoom2D={seek,reset:create,start:()=>{playing=true},duration:()=>duration,validate,select:(a,b)=>{selectFrom.value=a;selectTo.value=b;create()},summary:()=>({duration,chairsMoved:tasks.length,source:selectFrom.value,target:selectTo.value})};
+// Embedded mode (Reroom phone demo): #bare&from=classroom&to=group&speed=2
+const opts=new URLSearchParams(location.hash.slice(1));
+if(opts.has('bare'))document.body.classList.add('bare');
+if(opts.get('from'))selectFrom.value=opts.get('from');
+if(opts.get('to'))selectTo.value=opts.get('to');
+if(opts.get('speed'))speed.value=opts.get('speed');
+create();playing=true;cv.addEventListener('click',()=>{if(stop.checked)return;playing=!playing;updateUI();});requestAnimationFrame(tick);
+})();
+</script>
+</body></html>

@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ReRoom demo: create room</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --ink:#1a3a3f; --teal:#2d7d6f; --mint:#cfe5df; --bg:#f6f4ee; --line:#d9d5c9; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
+         font:15px/1.4 "Segoe UI", system-ui, sans-serif; display:flex; align-items:center; justify-content:center; gap:56px; padding:24px; }
+
+  /* left side */
+  .side { width:290px; }
+  .side h1 { font-size:42px; margin:0 0 4px; letter-spacing:-1px; }
+  .side p.sub { margin:0 0 24px; color:#5d7377; }
+  .feat { display:flex; gap:12px; align-items:center; width:100%; text-align:left; padding:12px 14px; margin-bottom:10px; border:2px solid var(--line);
+          border-radius:14px; background:#fff; font:inherit; color:inherit; cursor:pointer; transition:.2s; }
+  .feat b { width:30px; height:30px; border-radius:50%; background:var(--ink); color:#fff; display:grid; place-items:center; flex:none; }
+  .feat:hover:not(:disabled) { border-color:var(--teal); }
+  .feat.active { border-color:var(--teal); background:var(--mint); }
+  .feat:disabled { opacity:.45; cursor:default; }
+  .feat small { display:block; color:#6b8085; }
+  .ctrl { display:flex; align-items:center; gap:8px; margin-top:16px; }
+  .ctrl[hidden] { display:none; }
+  .ctrl button { width:42px; height:42px; border-radius:50%; border:0; background:var(--ink); color:#fff; font-size:16px; cursor:pointer; }
+  .ctrl button:disabled { opacity:.3; cursor:default; }
+  .ctrl span { margin-left:8px; color:#6b8085; font-size:13px; }
+  .caption { min-height:48px; color:var(--teal); font-weight:600; margin-top:14px; }
+
+  /* phone */
+  .phone { width:390px; height:720px; background:#111; border-radius:44px; padding:10px; box-shadow:0 20px 50px #0003; flex:none; }
+  .screenwrap { position:relative; width:100%; height:100%; background:#fff; border-radius:34px; overflow:hidden; }
+  .status { height:30px; display:flex; justify-content:space-between; padding:8px 22px 0; font-size:12px; font-weight:600; }
+  .appbar { height:50px; display:flex; align-items:center; gap:10px; padding:0 18px; border-bottom:1px solid var(--line); font-weight:700; font-size:18px; }
+  .logo { width:26px; height:26px; border-radius:8px; background:var(--ink); position:relative; }
+  .logo::after { content:""; position:absolute; inset:7px; border:2px solid var(--mint); border-radius:50%; }
+  .screen { position:absolute; left:0; right:0; top:80px; bottom:0; padding:14px 16px; opacity:0; transform:translateX(40px);
+            transition:opacity .45s, transform .45s; pointer-events:none; }
+  .screen.on { opacity:1; transform:none; }
+  h2 { font-size:20px; margin:0 0 2px; }
+  .hint { color:#6b8085; font-size:13px; margin:0 0 12px; }
+
+  .tile, .opt { display:flex; align-items:center; gap:12px; border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-bottom:9px; transition:background .2s; }
+  .tile b, .opt b { display:block; font-size:14px; }
+  .tile small, .opt small { color:#6b8085; font-size:12px; }
+  .ico { width:36px; height:36px; border-radius:10px; background:var(--mint); display:grid; place-items:center; font-size:12px; font-weight:700; color:var(--teal); flex:none; }
+  .soon { margin-left:auto; font-size:11px; color:#6b8085; }
+  .fmts { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+  .fmts span { background:var(--mint); color:var(--teal); border-radius:10px; padding:1px 8px; font-size:11px; font-weight:600; }
+  .opt.up { border-style:dashed; border-color:var(--teal); }
+  .tile.dim { opacity:.45; }
+  .pressed { background:var(--mint) !important; }
+
+  .field { border:1px solid var(--line); border-radius:10px; padding:5px 10px; margin-bottom:7px; transition:background .2s; }
+  .field small { display:block; color:#6b8085; font-size:10px; line-height:1.2; }
+  .field .val { font-weight:600; font-size:13px; min-height:19px; display:inline-block; }
+  .row { display:flex; gap:7px; } .row .field { flex:1; }
+  .addrow { display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-bottom:4px; min-height:26px; }
+  .sheet { position:absolute; left:0; right:0; bottom:0; background:#fff; border-radius:22px 22px 0 0; box-shadow:0 -8px 24px #0003; padding:16px; z-index:5;
+           transform:translateY(105%); transition:transform .4s; }
+  .sheet.on { transform:none; }
+  .sheet small { display:block; color:#6b8085; font-size:12px; margin-bottom:10px; }
+  .cat { display:flex; flex-direction:column; gap:7px; }
+  .cat span { border:1px solid var(--teal); border-radius:12px; padding:8px 12px; font-size:13px; font-weight:600; transition:.2s; }
+  .cat span small { display:inline; margin:0 0 0 6px; font-weight:400; color:inherit; opacity:.7; }
+  .cat span.added { background:var(--teal); color:#fff; }
+  .addrow .lab { width:58px; font-size:11px; color:#6b8085; }
+  .add { border:1px dashed var(--teal); color:var(--teal); border-radius:12px; padding:2px 9px; font-size:12px; font-weight:600; }
+  .pill { background:var(--mint); border-radius:12px; padding:2px 9px; font-size:11px; animation:pop .3s; }
+  @keyframes pop { from { transform:scale(.6); opacity:0; } }
+  .json { background:var(--ink); color:#cfe5df; border-radius:12px; padding:9px 11px; margin:8px 0; font:9.5px/1.4 Consolas, monospace; height:110px; overflow:hidden; white-space:pre-wrap; word-break:break-word; }
+  .json .k { color:#8fd3c3; } .json .e { color:#e0a96a; }
+  .btn { width:100%; padding:12px; border:0; border-radius:14px; background:var(--teal); color:#fff; font:600 15px "Segoe UI",system-ui,sans-serif; transition:background .2s, transform .2s; }
+  .btn.pressed { background:var(--ink) !important; transform:scale(.97); }
+  .toast { position:absolute; left:16px; right:16px; bottom:16px; background:var(--ink); color:#fff; border-radius:12px; padding:11px 14px;
+           opacity:0; transform:translateY(12px); transition:.35s; font-size:14px; }
+  .toast.on { opacity:1; transform:none; }
+
+  /* result */
+  .res { display:flex; gap:14px; }
+  #room { height:430px; flex:none; border-radius:6px; }
+  .info { font-size:13px; flex:1; }
+  .info .k { color:#6b8085; font-size:11px; margin-top:10px; }
+  .info .v { font-weight:600; }
+  .part { opacity:0; transition:opacity .5s; } .part.on { opacity:1; }
+
+  .opt.dim { opacity:.45; }
+  .msgs { position:absolute; left:16px; right:16px; top:14px; bottom:70px; display:flex; flex-direction:column; justify-content:flex-end; gap:10px; overflow:hidden; }
+  .msg { max-width:88%; padding:10px 13px; border-radius:16px; font-size:13px; line-height:1.4; animation:pop .3s; }
+  .msg.u { align-self:flex-end; border:1.5px solid var(--teal); font-style:italic; }
+  .msg.a { align-self:flex-start; background:var(--teal); color:#fff; }
+  .inputbar { position:absolute; left:16px; right:16px; bottom:14px; display:flex; gap:8px; }
+  .inp { flex:1; border:1px solid var(--line); border-radius:20px; padding:10px 14px; font-size:13px; min-height:42px; color:var(--ink); }
+  .inp:empty::before { content:"Describe the layout…"; color:#9aa9ac; }
+  .send { width:42px; height:42px; border-radius:50%; background:var(--teal); color:#fff; display:grid; place-items:center; transition:.2s; }
+  .gl { list-style:none; padding:0; margin:14px 0; }
+  .gl li { display:flex; gap:10px; align-items:center; padding:9px 0; color:#9aa9ac; transition:.3s; font-size:14px; }
+  .gl li::before { content:""; width:20px; height:20px; border-radius:50%; border:2px solid var(--line); flex:none; transition:.3s; }
+  .gl li.done { color:var(--ink); }
+  .gl li.done::before { background:var(--teal); border-color:var(--teal); content:"✓"; color:#fff; font-size:12px; display:grid; place-items:center; }
+  .pbar { height:8px; background:#e6e3d8; border-radius:4px; overflow:hidden; }
+  .pbar i { display:block; height:100%; width:0; background:var(--teal); transition:width .8s; }
+  .tabs4 { display:flex; background:#eceae2; border-radius:12px; padding:3px; margin-bottom:10px; }
+  .tabs4 span { flex:1; text-align:center; padding:7px 0; border-radius:10px; font-weight:600; font-size:12px; transition:.2s; }
+  .tabs4 span.act { background:#fff; box-shadow:0 1px 3px #0002; }
+  .view { height:360px; border:1px solid var(--line); border-radius:12px; display:none; align-items:center; justify-content:center; overflow:hidden; background:#fbfaf6; }
+  .view.on { display:flex; }
+  .view img { max-width:100%; max-height:100%; display:block; }
+  .view.pan { justify-content:flex-start; }
+  .view.pan img { max-width:none; max-height:none; height:300px; transition:transform 4s ease-in-out; }
+  .view.code { background:var(--ink); border:0; align-items:flex-start; }
+  .view.code pre { margin:0; padding:12px; font:9px/1.4 Consolas, monospace; color:#cfe5df; }
+  .view.code .k { color:#8fd3c3; } .view.code .e { color:#e0a96a; }
+  .checks { margin-top:10px; font-size:12px; color:var(--teal); font-weight:600; }
+  .task { display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:12px; padding:9px 12px; margin-bottom:7px; font-size:13px; }
+  .task b { display:block; } .task small { color:#6b8085; font-size:11px; }
+  .task .tg { margin-left:auto; width:34px; height:20px; border-radius:10px; background:var(--teal); position:relative; flex:none; }
+  .task .tg::after { content:""; position:absolute; right:3px; top:3px; width:14px; height:14px; border-radius:50%; background:#fff; }
+  .sec { font-size:11px; color:#6b8085; margin:12px 0 6px; text-transform:uppercase; letter-spacing:.5px; }
+  .manual { border:2px solid var(--teal); border-radius:14px; padding:12px; }
+  .stepper { margin-top:6px; }
+  .srow { display:grid; grid-template-columns:30px 1fr; gap:10px; padding:7px 0; opacity:.4; transition:opacity .3s; }
+  .srow.act, .srow.done { opacity:1; }
+  .srow .dot { width:28px; height:28px; border-radius:50%; background:#e6e3d8; display:grid; place-items:center; font-size:13px; font-weight:700; transition:.3s; }
+  .srow.act .dot { background:var(--teal); color:#fff; }
+  .srow.done .dot { background:var(--ink); color:#fff; }
+  .srow b { font-size:14px; } .srow small { color:#6b8085; font-size:12px; margin-left:6px; }
+  .srow .detail { display:none; font-size:12px; margin-top:6px; }
+  .srow.open .detail { display:block; }
+  .animwrap { position:relative; width:267px; margin:8px auto; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .animwrap iframe { display:block; width:100%; height:150px; border:0; pointer-events:none; }
+  #bigOv { position:fixed; inset:0; background:#1a3a3fcc; display:none; align-items:center; justify-content:center; z-index:50; }
+  #bigOv.on { display:flex; }
+  .bigbox { width:min(94vw, 1100px); }
+  .bigbox iframe { display:block; width:100%; aspect-ratio:16/9; border:0; border-radius:12px; background:#f4f7f5; }
+  .bigbar { display:flex; justify-content:space-between; align-items:center; color:#fff; margin-bottom:8px; font-weight:600; }
+  .bigbar button { background:#fff; color:var(--ink); border:0; border-radius:16px; padding:6px 14px; font:inherit; cursor:pointer; }
+  .anim { height:120px; margin:8px 0; border:2px dashed var(--line); border-radius:12px; display:grid; place-items:center; text-align:center; color:#8a9a9d; font-weight:600; font-size:12px; }
+  .anim small { display:block; font-weight:400; margin:0; }
+  .chk { padding:2px 0; color:#9aa9ac; transition:.3s; } .chk.ok { color:var(--ink); } .chk.ok::before { content:"✓ "; color:var(--teal); font-weight:700; }
+  .fixnote { margin-top:10px; font-size:11px; color:#6b8085; border-top:1px dashed var(--line); padding-top:8px; }
+  .finger { position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px; border-radius:50%; background:#2d7d6f55; border:2px solid var(--teal);
+            z-index:10; left:340px; top:650px; transition:left .6s ease-in-out, top .6s ease-in-out, transform .15s; pointer-events:none; }
+  .finger.down { transform:scale(.7); background:#2d7d6faa; }
+</style>
+</head>
+<body>
+
+<div class="side">
+  <h1>ReRoom</h1>
+  <p class="sub">Click a feature to play its demo.</p>
+  <button class="feat" id="fCreate"><b>1</b><span>Create room<small>Import, describe, or fill in</small></span></button>
+  <button class="feat" id="fLayouts"><b>2</b><span>Create layouts<small>Describe to AI, review, generate</small></span></button>
+  <button class="feat" id="fSched"><b>3</b><span>Schedule or start<small>Scheduled tasks, manual trigger</small></span></button>
+  <div class="ctrl" id="ctrl" hidden>
+    <button id="bPrev" title="Previous step">⏮</button>
+    <button id="bPlay" title="Pause / play">⏸</button>
+    <button id="bNext" title="Next step">⏭</button>
+    <span id="stepNo"></span>
+  </div>
+  <div class="caption" id="caption"></div>
+</div>
+
+<div class="phone"><div class="screenwrap" id="phone">
+  <div class="status"><span>09:41</span><span>▂▄▆ 5G ▮▮▮</span></div>
+  <div class="appbar"><div class="logo"></div> ReRoom</div>
+
+  <!-- home -->
+  <div class="screen on" id="home">
+    <h2>Rooms</h2><p class="hint">What do you want to do?</p>
+    <div class="tile" id="tCreate"><div class="ico">1</div><div><b>Create room</b><small>Add a new space</small></div></div>
+    <div class="tile" id="tLayouts"><div class="ico">2</div><div><b>Create layouts</b><small>For each room</small></div></div>
+    <div class="tile" id="tSched"><div class="ico">3</div><div><b>Schedule or start</b><small>Rearrange the room</small></div></div>
+  </div>
+
+  <!-- choose method -->
+  <div class="screen" id="choose">
+    <h2>New room</h2><p class="hint">How do you want to describe it?</p>
+    <div class="opt up"><div class="ico">⇪</div><div><b>Upload file</b><small>Drop a file or browse. Accepted formats:</small>
+      <div class="fmts"><span>.dwg</span><span>.3dm</span><span>.json</span></div></div></div>
+    <div class="opt" id="optFill"><div class="ico">✎</div><div><b>Fill in a form</b><small>Fill the fields or add your own</small></div></div>
+    <div class="opt"><div class="ico">AI</div><div><b>Describe to AI</b><small>"8 by 25 metre hall, two columns…"</small></div></div>
+  </div>
+
+  <!-- fill -->
+  <div class="screen" id="fill">
+    <h2>Fill in form</h2>
+    <div class="field" id="fId"><small>room_id</small><span class="val"></span></div>
+    <div class="row">
+      <div class="field" id="fW"><small>width (m)</small><span class="val"></span></div>
+      <div class="field" id="fD"><small>depth (m)</small><span class="val"></span></div>
+    </div>
+    <div class="row">
+      <div class="field" id="fCell"><small>cell_m</small><span class="val"></span></div>
+      <div class="field" id="fAisle"><small>min_aisle_m</small><span class="val"></span></div>
+    </div>
+    <div class="addrow"><span class="lab">Inventory</span><span id="pInv"></span><span class="add" id="aInv">+ add inventory</span></div>
+    <div class="addrow"><span class="lab">Columns</span><span id="pCols"></span><span class="add" id="aCols">+ add</span></div>
+    <div class="addrow"><span class="lab">Walls</span><span id="pWalls"></span><span class="add" id="aWalls">+ add</span></div>
+    <div class="addrow"><span class="lab">Doors</span><span id="pDoors"></span><span class="add" id="aDoors">+ add</span></div>
+    <div class="addrow"><span class="lab">Custom</span><span id="pCustom"></span><span class="add" id="aCustom">+ add your field</span></div>
+    <div class="json" id="json"></div>
+    <button class="btn" id="createBtn">Create room</button>
+    <div class="sheet" id="sheet">
+      <b>Inventory catalog</b><small>Already defined, with size and weight</small>
+      <div class="cat">
+        <span data-t="chair">chair<small>0.42 × 0.43 m · 5 kg</small></span>
+        <span data-t="table">table<small>1.6 × 1.6 m</small></span>
+        <span data-t="long_desk">long_desk<small>4.4 × 0.61 m · 30 kg</small></span>
+        <span data-t="display_panel">display_panel<small>5.0 × 0.1 m</small></span>
+        <span data-t="robot">robot<small>max load 20 kg</small></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- result -->
+  <div class="screen" id="result">
+    <h2>H-1F-hall</h2><p class="hint">Room created</p>
+    <div class="res">
+      <svg id="room" viewBox="-0.3 -0.3 8.6 26.2">
+        <defs><pattern id="g" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M1 0H0V1" fill="none" stroke="#e4e1d6" stroke-width=".03"/></pattern></defs>
+        <rect width="8" height="25.6" fill="#fbfaf6"/><rect width="8" height="25.6" fill="url(#g)"/>
+        <g class="part" id="rWalls">
+          <line x1="0" y1="0" x2="0" y2="25.6" stroke="#1a3a3f" stroke-width=".22"/>
+          <line x1="8" y1="0" x2="8" y2="25.6" stroke="#7fb6d6" stroke-width=".22"/>
+          <line x1="0" y1="0" x2="8" y2="0" stroke="#1a3a3f" stroke-width=".12"/>
+          <line x1="0" y1="25.6" x2="8" y2="25.6" stroke="#1a3a3f" stroke-width=".12"/>
+          <text x="-.15" y="12.8" font-size=".5" fill="#1a3a3f" transform="rotate(-90 -.15 12.8)" text-anchor="middle" dy="-.15">W1 solid</text>
+          <text x="8.15" y="12.8" font-size=".5" fill="#4b8bb0" transform="rotate(90 8.15 12.8)" text-anchor="middle" dy="-.15">W2 glass</text>
+        </g>
+        <g class="part" id="rCols" fill="#1a3a3f">
+          <rect x="0" y="8" width=".4" height=".4"/><rect x="7.6" y="8" width=".4" height=".4"/>
+          <text x=".6" y="8.3" font-size=".45">K1</text><text x="6.7" y="8.3" font-size=".45">K2</text>
+        </g>
+        <g class="part" id="rDoor">
+          <rect x="-.12" y="16.2" width=".24" height="2.2" fill="#fff" stroke="#e0873a" stroke-width=".08"/>
+          <path d="M0 16.2 A2.2 2.2 0 0 1 2.2 18.4 L0 18.4Z" fill="#e0873a" opacity=".2" stroke="#e0873a" stroke-width=".05" stroke-dasharray=".2 .15"/>
+          <text x=".4" y="17.5" font-size=".5" fill="#e0873a">D1</text>
+        </g>
+      </svg>
+      <div class="info">
+        <div class="k">Size</div><div class="v">8.0 × 25.6 m</div>
+        <div class="k">Grid</div><div class="v">0.2 m · A1 to AN128</div>
+        <div class="k">Columns</div><div class="v">2</div>
+        <div class="k">Walls</div><div class="v">solid, glass</div>
+        <div class="k">Doors</div><div class="v">1 (keep clear)</div>
+        <div class="k">Min aisle</div><div class="v">1.2 m</div>
+        <div class="k">Validation</div><div class="v" style="color:var(--teal)">✓ passed</div>
+      </div>
+    </div>
+    <div class="toast" id="tDone">✓ Room H-1F-hall created</div>
+  </div>
+
+  <!-- layouts: choose room -->
+  <div class="screen" id="rooms">
+    <h2>Choose room</h2><p class="hint">Layouts belong to a room.</p>
+    <div class="opt" id="roomCard">
+      <svg width="30" height="70" viewBox="-.3 -.3 8.6 26.2"><rect width="8" height="25.6" fill="#fbfaf6" stroke="#1a3a3f" stroke-width=".4"/><line x1="8" y1="0" x2="8" y2="25.6" stroke="#7fb6d6" stroke-width=".5"/><rect x="0" y="8" width="1" height="1" fill="#1a3a3f"/><rect x="7" y="8" width="1" height="1" fill="#1a3a3f"/></svg>
+      <div><b>H-1F-hall</b><small>8.0 × 25.6 m · 2 columns · 1 door</small></div>
+    </div>
+    <div class="opt dim"><div class="ico">+</div><div><b>New room</b></div></div>
+  </div>
+
+  <!-- layouts: method -->
+  <div class="screen" id="method2">
+    <h2>New layout</h2><p class="hint">H-1F-hall · How do you want to describe it?</p>
+    <div class="opt up"><div class="ico">⇪</div><div><b>Upload file</b><small>Drop a file or browse. Accepted formats:</small>
+      <div class="fmts"><span>.dwg</span><span>.3dm</span><span>.json</span></div></div></div>
+    <div class="opt"><div class="ico">✎</div><div><b>Fill in a form</b><small>Fill the fields or add your own</small></div></div>
+    <div class="opt" id="optAI"><div class="ico">AI</div><div><b>Describe to AI</b><small>"Group study for 36 people…"</small></div></div>
+  </div>
+
+  <!-- layouts: chat -->
+  <div class="screen" id="chat">
+    <div class="msgs" id="msgs"></div>
+    <div class="inputbar"><div class="inp" id="chatIn"></div><div class="send" id="sendBtn">➤</div></div>
+  </div>
+
+  <!-- layouts: generating -->
+  <div class="screen" id="gen">
+    <h2>Generating layout</h2><p class="hint">Group study · H-1F-hall</p>
+    <ul class="gl" id="gl">
+      <li>Reading the room</li><li>Placing 3 tables and 36 chairs</li><li>Checking aisles and door D1</li>
+      <li>Setting light and temperature</li><li>Building the 3D model</li><li>Running final checks</li>
+    </ul>
+    <div class="pbar"><i id="gbar"></i></div>
+  </div>
+
+  <!-- layouts: result -->
+  <div class="screen" id="lres">
+    <h2>Group study</h2><p class="hint">H-1F-hall · 36 seats · 22 °C · bright, even</p>
+    <div class="tabs4" id="tabs4"><span data-v="3d">3D</span><span data-v="2d">2D</span><span data-v="grid">2D grid</span><span data-v="json">JSON</span></div>
+    <div class="view" data-v="3d"><img src="img/model-3d.jpg" alt="3D model"></div>
+    <div class="view" data-v="2d"><img src="img/plan-2d.png" alt="2D plan"></div>
+    <div class="view pan" data-v="grid"><img src="img/plan-grid.png" alt="2D plan with grid"></div>
+    <div class="view code" data-v="json"><pre id="jsonOut"></pre></div>
+    <div class="checks">✓ Checks passed</div>
+  </div>
+
+  <!-- schedule -->
+  <div class="screen" id="sched">
+    <h2 style="margin-bottom:10px">H-1F-hall</h2>
+    <div class="sec" style="margin-top:0">Scheduled</div>
+    <div class="task"><div class="ico">⏰</div><div><b>Classroom</b><small>Mon – Fri · 08:00</small></div><span class="tg"></span></div>
+    <div class="task"><div class="ico">⏰</div><div><b>Guest lecture / presentation</b><small>Wed · 14:00</small></div><span class="tg"></span></div>
+    <div class="opt" style="border-style:dashed; border-color:var(--teal); color:var(--teal); font-weight:600; justify-content:center; padding:9px">+ Add schedule</div>
+    <div class="sec">Manual trigger</div>
+    <div class="manual">
+      <div class="field"><small>Layout</small><span class="val">Group study</span></div>
+      <button class="btn" id="startNow">▶ Start now</button>
+    </div>
+  </div>
+
+  <!-- run -->
+  <div class="screen" id="run">
+    <h2>Group study</h2><p class="hint">Manual start · H-1F-hall</p>
+    <div class="stepper" id="stepper">
+      <div class="srow"><div class="dot">1</div><div><b>Plan</b><small>current vs target</small>
+        <div class="detail"><div id="planWait">Comparing the room now with the layout…</div>
+          <div id="planSum" hidden><b style="margin:0">Move 36 chairs and 3 tables</b> · about 9 min
+            <div class="animwrap"><iframe id="planFrame" title="Plan animation"></iframe></div>
+            <button class="btn" id="confirmBtn">Confirm &amp; start</button></div></div></div></div>
+      <div class="srow"><div class="dot">2</div><div><b>Move</b><small>robot fleet</small>
+        <div class="detail">R1 and R2 are moving the furniture.<div class="pbar" style="margin-top:8px"><i id="mbar" style="transition:width 3s linear"></i></div></div></div></div>
+      <div class="srow"><div class="dot">3</div><div><b>Check</b><small>sensors</small>
+        <div class="detail"><div class="chk">Aisles at least 1.2 m</div><div class="chk">Door D1 clear</div><div class="chk">Light and air set</div></div></div></div>
+      <div class="srow"><div class="dot">4</div><div><b>Done</b><small>room ready</small><div class="detail" style="color:var(--teal);font-weight:600">The room is ready.</div></div></div>
+    </div>
+    <div class="fixnote">If a check fails: retry the move, or ask a person.</div>
+    <div class="toast" id="tReady">✓ Room ready</div>
+  </div>
+
+  <div class="finger" id="finger"></div>
+</div></div>
+
+<div id="bigOv"><div class="bigbox">
+  <div class="bigbar"><span>3. Move · robot fleet · 10×</span><button id="bigClose">✕ Close</button></div>
+  <iframe id="bigFrame" title="Plan animation, large"></iframe>
+</div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+/* ---------- helpers ---------- */
+let token = 0, fast = false;
+const sleep = ms => { const my = token; return new Promise((ok, no) => {
+  if (fast) return my === token ? ok() : no('abort');
+  setTimeout(() => my === token ? ok() : no('abort'), ms);
+}); };
+const finger = $('#finger'), phone = $('#phone');
+
+async function tap(el) {
+  const r = el.getBoundingClientRect(), p = phone.getBoundingClientRect();
+  finger.style.left = (r.left - p.left + r.width / 2) + 'px';
+  finger.style.top  = (r.top - p.top + r.height / 2) + 'px';
+  if (fast) return;
+  await sleep(700);
+  finger.classList.add('down'); el.classList.add('pressed');
+  await sleep(250);
+  finger.classList.remove('down'); el.classList.remove('pressed');
+  await sleep(250);
+}
+async function type(sel, text, key) {
+  const v = $(sel).querySelector('.val');
+  st[key] = '';
+  for (const ch of text) {
+    st[key] += ch; v.textContent = st[key]; renderJson();
+    if (!fast) await sleep(80);
+  }
+}
+const show = id => document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
+const say = t => $('#caption').textContent = t;
+
+/* ---------- live JSON ---------- */
+const st = {};
+function resetState() {
+  Object.assign(st, { id: '', w: '', d: '', cell: '', aisle: '', cols: [], walls: [], doors: [], custom: [], inv: [] });
+}
+const COLS  = [['K1', 'A41'], ['K2', 'AN41']];
+const WALLS = [['W1', 'west', 'solid'], ['W2', 'east', 'glass']];
+const DOORS = [['D1', 'W1', 'A82:A92']];
+
+function renderJson() {
+  requestAnimationFrame(() => { const j = $('#json'); j.scrollTop = j.scrollHeight; });
+  const q = v => v === '' ? '<span class="e">…</span>' : `<span class="e">"${v}"</span>`;
+  const n = v => v === '' ? '<span class="e">…</span>' : `<span class="e">${v}</span>`;
+  const k = s => `<span class="k">"${s}"</span>`;
+  const list = (arr, f) => arr.length ? '[ ' + arr.map(f).join(', ') + ' ]' : '[ ]';
+  $('#json').innerHTML =
+`{
+  ${k('room_id')}: ${q(st.id)}, ${k('units')}: <span class="e">"metres"</span>,
+  ${k('size')}: { ${k('width')}: ${n(st.w)}, ${k('depth')}: ${n(st.d)} },
+  ${k('grid')}: { ${k('cell_m')}: ${n(st.cell)} },
+  ${k('inventory')}: ${list(st.inv, i => `{ ${k('type')}: ${q(i[0])}, ${k('count')}: ${n(i[1])} }`)},
+  ${k('columns')}: ${list(st.cols, c => `{ ${k('id')}: ${q(c[0])}, ${k('cell')}: ${q(c[1])} }`)},
+  ${k('walls')}: ${list(st.walls, w => `{ ${k('id')}: ${q(w[0])}, ${k('side')}: ${q(w[1])}, ${k('type')}: ${q(w[2])} }`)},
+  ${k('doors')}: ${list(st.doors, d => `{ ${k('id')}: ${q(d[0])}, ${k('wall')}: ${q(d[1])}, ${k('range')}: ${q(d[2])} }`)},
+${st.custom.map(c => `  ${k(c[0])}: ${n(c[1])},
+`).join('')}  ${k('rules')}: { ${k('layout')}: { ${k('min_aisle_m')}: ${n(st.aisle)}, ${k('keep_clear')}: ${st.doors.length ? '[<span class="e">"D1"</span>]' : '[ ]'} } }
+}`;
+}
+
+async function addItems(btn, box, src, key, label) {
+  for (const it of src) {
+    await tap(btn);
+    const s = document.createElement('span');
+    s.className = 'pill'; s.textContent = label(it);
+    $(box).appendChild(s);
+    st[key].push(it); renderJson();
+  }
+}
+
+/* ---------- the create-room demo: a list of steps ---------- */
+function reset() {
+  resetState(); renderJson();
+  ['#fId', '#fW', '#fD', '#fCell', '#fAisle'].forEach(s => $(s).querySelector('.val').textContent = '');
+  ['#pCols', '#pWalls', '#pDoors', '#pCustom', '#pInv'].forEach(s => $(s).innerHTML = '');
+  document.querySelectorAll('.part').forEach(p => p.classList.remove('on'));
+  $('#tDone').classList.remove('on'); $('#sheet').classList.remove('on');
+  document.querySelectorAll('.cat span').forEach(c => c.classList.remove('added'));
+  finger.classList.remove('down');
+  document.querySelectorAll('.pressed').forEach(e => e.classList.remove('pressed'));
+  finger.style.left = '340px'; finger.style.top = '650px';
+  resetLayouts(); resetSched();
+  show('home'); say('');
+}
+const field = (sel, text, key) => async () => { await tap($(sel)); await type(sel, text, key); await sleep(300); };
+const catalogStep = (type, count, text, close) => async () => {
+  say(text);
+  await tap($('.cat [data-t="' + type + '"]'));
+  $('.cat [data-t="' + type + '"]').classList.add('added');
+  const p = document.createElement('span');
+  p.className = 'pill'; p.textContent = type + ' ×' + count;
+  $('#pInv').appendChild(p);
+  st.inv.push([type, count]); renderJson();
+  await sleep(700);
+  if (close) { $('#sheet').classList.remove('on'); await sleep(400); }
+};
+const createSteps = [
+  async () => { show('home'); say('Start from the Rooms screen.'); await sleep(900); },
+  async () => { await tap($('#tCreate')); show('choose'); say('Three ways in: upload a file (.dwg, .3dm, .json), fill a form, or describe it to AI.'); await sleep(2800); },
+  async () => { await tap($('#optFill')); show('fill'); say('Fill in the fields, or add your own.'); await sleep(600); },
+  field('#fId', 'H-1F-hall', 'id'),
+  field('#fW', '8.0', 'w'),
+  field('#fD', '25.6', 'd'),
+  field('#fCell', '0.2', 'cell'),
+  field('#fAisle', '1.2', 'aisle'),
+  async () => { say('Add inventory. Items come from a catalog.'); await tap($('#aInv')); $('#sheet').classList.add('on'); await sleep(1400); },
+  catalogStep('chair', 60, 'Chair is already defined, with its size and weight.'),
+  catalogStep('table', 11, 'Same for the table. Just set how many.', true),
+  async () => { say('Columns sit on grid cells.'); await addItems($('#aCols'), '#pCols', COLS, 'cols', c => `${c[0]} · ${c[1]}`); },
+  async () => { say('Walls: solid on the west, glass on the east.'); await addItems($('#aWalls'), '#pWalls', WALLS, 'walls', w => `${w[0]} · ${w[1]} · ${w[2]}`); },
+  async () => { say('The door range stays keep-clear.'); await addItems($('#aDoors'), '#pDoors', DOORS, 'doors', d => `${d[0]} · ${d[2]}`); await sleep(900); },
+  async () => { say('Need something else? Add your own field.'); await addItems($('#aCustom'), '#pCustom', [['ceiling_height_m', '3.2']], 'custom', c => `${c[0]} · ${c[1]}`); await sleep(900); },
+  async () => {
+    await tap($('#createBtn')); show('result'); say('Room created. It is ready for layouts.');
+    await sleep(600);
+    for (const id of ['#rWalls', '#rCols', '#rDoor']) { $(id).classList.add('on'); await sleep(600); }
+    $('#tDone').classList.add('on');
+  }
+];
+
+/* ---------- layouts demo ---------- */
+const bubble = (cls, html) => { const m = document.createElement('div'); m.className = 'msg ' + cls; m.innerHTML = html; $('#msgs').appendChild(m); return m; };
+async function userSay(text) {
+  if (!fast) {
+    const inp = $('#chatIn'); inp.textContent = '';
+    for (const ch of text) { inp.textContent += ch; await sleep(30); }
+    await sleep(300); await tap($('#sendBtn')); $('#chatIn').textContent = '';
+  }
+  bubble('u', text);
+}
+async function aiSay(html) {
+  const m = bubble('a', '•••');
+  await sleep(1100);
+  m.innerHTML = html;
+  await sleep(500);
+}
+const JSON_LINES = [
+  '{',
+  '  "layout_id": "group-study",',
+  '  "room_id": "H-1F-hall", "room_version": 1,',
+  '  "grid": { "cell_m": 0.2,',
+  '    "naming": "Excel style, A1 to AN128" },',
+  '  "items": [',
+  '    { "id": "SQ1", "type": "table",',
+  '      "range": "U64:AB71",',
+  '      "size_cells": [8, 8] },',
+  '    { "id": "C1", "type": "chair",',
+  '      "cells": ["U62", "V62", "U63", "V63"],',
+  '      "rot": 180 },',
+  '    { "id": "C2", "type": "chair",',
+  '      "cells": ["X62", "Y62", "X63", "Y63"],',
+  '      "rot": 180 },',
+  '    ... 39 items in total',
+  '  ],',
+  '  "environment": { "temperature_c": 22,',
+  '    "lighting": "bright_even",',
+  '    "ventilation": "high" },',
+  '  "checks": { "status": "passed" }',
+  '}'
+];
+const colorLine = l => l.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  .replace(/"([a-z_]+)":/g, '<span class="k">"$1":</span>')
+  .replace(/: ("[^"]*"|[0-9.]+)/g, ': <span class="e">$1</span>');
+const setTab = v => {
+  document.querySelectorAll('#tabs4 span').forEach(t => t.classList.toggle('act', t.dataset.v === v));
+  document.querySelectorAll('.view').forEach(e => e.classList.toggle('on', e.dataset.v === v));
+  $('.view.pan img').style.transition = 'none';
+  $('.view.pan img').style.transform = 'translateX(0)';
+};
+const tabTap = async v => { await tap($('#tabs4 [data-v="' + v + '"]')); setTab(v); };
+async function panGrid() {                       // slide across the three tables of the wide image
+  const img = $('.view.pan img'), box = img.parentElement;
+  await sleep(400);
+  img.getBoundingClientRect();
+  img.style.transition = fast ? 'none' : 'transform 4s ease-in-out';
+  img.style.transform = 'translateX(' + Math.min(0, box.clientWidth - img.offsetWidth) + 'px)';
+  await sleep(4400);
+}
+async function writeJson() {
+  const out = $('#jsonOut'); out.innerHTML = '';
+  const lines = [];
+  for (const l of JSON_LINES) {
+    lines.push(colorLine(l)); out.innerHTML = lines.join('\n');
+    await sleep(110);
+  }
+  await sleep(800);
+}
+function resetLayouts() {
+  $('#msgs').innerHTML = ''; $('#chatIn').textContent = '';
+  document.querySelectorAll('#gl li').forEach(l => l.classList.remove('done'));
+  $('#gbar').style.width = '0'; $('#jsonOut').innerHTML = ''; setTab('3d');
+}
+const genStep = (from, text) => async () => {   // tick two checklist items, with a short wait before each
+  say(text);
+  const lis = [...document.querySelectorAll('#gl li')];
+  for (let i = from; i < from + 2; i++) {
+    await sleep(900); lis[i].classList.add('done'); $('#gbar').style.width = ((i + 1) / lis.length * 100) + '%';
+  }
+  await sleep(500);
+};
+const layoutSteps = [
+  async () => { show('home'); say('Next: layouts. Start from the Rooms screen.'); await sleep(900); },
+  async () => { await tap($('#tLayouts')); show('rooms'); say('First, choose the room. This is the one we created.'); await sleep(1200); },
+  async () => { await tap($('#roomCard')); show('method2'); say('Same three ways in. Here: describe it to AI.'); await sleep(1500); },
+  async () => { await tap($('#optAI')); show('chat'); say('Chat with the AI in plain words.'); await sleep(700); },
+  async () => { await userSay('Group study for 36 people, in three tables of 12.'); await sleep(400); },
+  async () => { say('The AI asks what it needs to know.'); await aiSay('Got it. Two quick questions:<br>1. Keep door D1 clear, with 1.2 m aisles?<br>2. Keep the tables away from the columns?'); },
+  async () => { await userSay('Yes, you are right. Add that one too.'); await sleep(400); },
+  async () => { say('It proposes a plan and asks for approval.'); await aiSay('I suggest 3 tables of 12, bright even light, and the room a little cooler (22 °C) for an active discussion. Unused furniture goes to storage. OK?'); },
+  async () => { await userSay('OK, generate it.'); show('gen'); say('Generating the model.'); await sleep(700); },
+  genStep(0, 'Reading the room and placing the furniture.'),
+  genStep(2, 'Checking the rules, then setting the environment.'),
+  genStep(4, 'Building the 3D model and running final checks.'),
+  async () => { show('lres'); setTab('3d'); say('Result, view 1 of 4: 3D model.'); await sleep(2500); },
+  async () => { await tabTap('2d'); say('View 2 of 4: 2D plan.'); await sleep(2500); },
+  async () => { await tabTap('grid'); say('View 3 of 4: 2D plan with grid, panning across the three tables.'); await panGrid(); },
+  async () => { await tabTap('json'); say('View 4 of 4: the JSON. Every item sits on grid cells.'); await writeJson(); }
+];
+
+/* ---------- schedule / manual trigger demo ---------- */
+function progress(i) {
+  document.querySelectorAll('#stepper .srow').forEach((row, j) => {
+    row.classList.toggle('done', j < i);
+    row.classList.toggle('act', j === i);
+    row.classList.toggle('open', j === Math.min(i, 3));
+  });
+}
+function closeBig() {
+  $('#bigOv').classList.remove('on'); $('#bigFrame').removeAttribute('src');
+}
+function openBig() {
+  $('#bigFrame').src = 'plan-animation.html#bare&from=classroom&to=group&speed=10';
+  $('#bigOv').classList.add('on');
+}
+$('#bigClose').onclick = closeBig;
+async function moveBig() {                       // the whole animation, large, until it reports it is done
+  if (fast) return;
+  let finished = false;
+  const onMsg = e => { if (e.data && e.data.reroom === 'done') finished = true; };
+  window.addEventListener('message', onMsg);
+  openBig();
+  try {
+    for (let i = 0; i < 300 && !finished && $('#bigOv').classList.contains('on'); i++) await sleep(100);
+    await sleep(1500);
+  } finally { window.removeEventListener('message', onMsg); closeBig(); }
+}
+function resetSched() {
+  closeBig();
+  progress(-1);
+  $('#planWait').hidden = false; $('#planSum').hidden = true; $('#planFrame').removeAttribute('src');
+  const b = $('#mbar'); b.style.transition = 'none'; b.style.width = '0'; b.offsetWidth; b.style.transition = 'width 3s linear';
+  document.querySelectorAll('.chk').forEach(c => c.classList.remove('ok'));
+  $('#tReady').classList.remove('on');
+}
+const schedSteps = [
+  async () => { show('home'); say('Last: schedule or start the ReRoom.'); await sleep(900); },
+  async () => { await tap($('#tSched')); show('sched'); say('Scheduled tasks are listed first. Add a schedule, or use the manual trigger.'); await sleep(2800); },
+  async () => { await tap($('#startNow')); show('run'); progress(0); say('1. Plan: compare the current room with the target layout.'); await sleep(1600); },
+  async () => { $('#planWait').hidden = true; $('#planSum').hidden = false; $('#planFrame').src = 'plan-animation.html#bare&from=classroom&to=group&speed=2'; say('The plan: what moves, and where.'); await sleep(4500); },
+  async () => { await tap($('#confirmBtn')); progress(1); say('2. Move: the robot fleet rearranges the room.'); const b = $('#mbar'); if (fast) b.style.transition = 'none'; b.style.width = '100%'; await moveBig(); },
+  async () => { progress(2); say('3. Check: sensors verify the result.'); for (const c of document.querySelectorAll('.chk')) { await sleep(700); c.classList.add('ok'); } await sleep(600); },
+  async () => { progress(4); $('#tReady').classList.add('on'); say('4. Done: room ready. A failed check goes to Fix: retry or ask a person.'); await sleep(1500); }
+];
+
+/* ---------- playback controls ---------- */
+let steps = createSteps;
+let cur = 0, playing = false;
+function updateUi() {
+  $('#stepNo').textContent = `Step ${cur + 1} / ${steps.length}`;
+  $('#bPlay').textContent = playing ? '⏸' : '▶';
+  $('#bPrev').disabled = cur === 0;
+  $('#bNext').disabled = cur === steps.length - 1;
+}
+async function goTo(i) {                       // jump to step i, then optionally keep playing
+  token++;
+  cur = i; updateUi();
+  try {
+    reset(); fast = true;
+    for (let j = 0; j < i; j++) await steps[j]();
+    fast = !playing;
+    await steps[i]();
+    while (playing && cur < steps.length - 1) {
+      await sleep(700);
+      cur++; updateUi();
+      await steps[cur]();
+    }
+    if (playing) { playing = false; fast = true; updateUi(); }
+  } catch (e) { if (e !== 'abort') throw e; }
+}
+function startFeature(btn, list) {
+  document.querySelectorAll('.feat').forEach(b => b.classList.toggle('active', b === btn));
+  $('#ctrl').hidden = false; steps = list; playing = true; goTo(0);
+}
+$('#fCreate').onclick = () => startFeature($('#fCreate'), createSteps);
+$('#fLayouts').onclick = () => startFeature($('#fLayouts'), layoutSteps);
+$('#fSched').onclick = () => startFeature($('#fSched'), schedSteps);
+$('#bPlay').onclick = () => {
+  if (playing) { playing = false; goTo(cur); }                     // pause: finish this step instantly
+  else { playing = true; goTo(cur === steps.length - 1 ? 0 : cur); }
+};
+$('#bPrev').onclick = () => { playing = false; goTo(Math.max(cur - 1, 0)); };
+$('#bNext').onclick = () => { playing = false; goTo(Math.min(cur + 1, steps.length - 1)); };
+resetState(); renderJson();
+</script>
+</body>
+</html>
